@@ -1,0 +1,153 @@
+#! /bin/sh
+template_file=tables_tpl.txt
+planner=mkplan
+plan_file=plan.txt
+keys_dir=keys
+
+set -e
+close_table() {
+	test -z "$table" && return
+	table=
+	exec 5>& -
+}
+cleanup() {
+	rc=$?
+	close_table
+	test -n "$TF" && rm -- "$TF"
+	test $rc = 0 || echo "$0 failed!" >& 2
+}
+TF=
+table=
+trap cleanup 0
+trap 'exit $?' TERM HUP INT QUIT
+
+mount=false
+shkeys=false
+unmount=false
+table_syntax=false
+while getopts ukmt opt
+do
+	case $opt in
+		t) table_syntax=true;;
+		m) mount=true;;
+		k) shkeys=true;;
+		u) unmount=true;;
+		*) false || exit
+	esac
+done
+shift `expr $OPTIND - 1 || :`
+
+TF=`mktemp -- "${TMPDIR:-/tmp}/${0##*/}.XXXXXXXXXX"`
+
+if $unmount
+then
+	sed 's/:$//; t; d' "$template_file" | tac > "$TF"
+	while IFS= read -r m
+	do
+		if dmsetup table -- "$m" > /dev/null 2>& 1
+		then
+			echo "Removing mapping $m"
+			dmsetup remove -- "$m"
+		fi
+	done < "$TF"
+	exit
+fi
+
+test -d "$keys_dir"
+
+test -f "$planner"
+test -f "$plan_file"
+sh "$planner" -s < "$plan_file" > "$TF"
+. "$TF"
+
+process_table() {
+	test -z "$table" && return
+	local map
+	map=$table
+	close_table
+	if $mount
+	then
+		dmsetup create -- "$map" < "$TF"
+		local mf try
+		mf=/dev/mapper/$map
+		if test ! -e "$mf"
+		then
+			dmsetup mknodes -- "$map"
+			try=1
+			while test ! -e "$mf"
+			do
+				sleep 1
+				try=`expr $try + 1`
+				test $try != 5
+			done
+		fi
+	else
+		if $table_syntax
+		then
+			local line
+			while IFS= read -r line
+			do
+				echo "$map: $line"
+			done
+		else
+			cat
+		fi < "$TF"
+		if $table_syntax
+		then
+			:
+		else
+			echo
+		fi
+	fi
+}
+
+sbtr() {
+	expr "$1" - "$2" || :
+}
+cb='}}'
+while IFS= read -r line
+do
+	test -z "$line" && continue
+	case $line in
+		*:)
+			line=${line%:}
+			kfile=$keys_dir/$line.key
+			process_table
+			exec 5> "$TF"; table=$line
+			if $table_syntax
+			then
+				:
+			else
+				echo "Creating mapping $table:"
+			fi
+			continue
+	esac
+	test -n "$table"
+	eval "line=\"$line\""
+	pfx=${line%"{{"*};
+	if test "$pfx" != "$line"
+	then
+		line=${line#"$pfx"}
+		sfx=${line#*"$cb"}; test "$sfx" != "$line"
+		line=${line%"$sfx"}; line=${line%"$cb"}; line=${line#"{{"}
+		expr "$line" : '[1-9][0-9]*$' > /dev/null
+		test -f "$kfile"
+		test "`stat -c %s -- "$kfile"`" = "$line"
+		printf %s "$pfx"
+		od -A n -vt x1 -- "$kfile" \
+		| if $shkeys
+		then
+			cat
+		elif $table_syntax
+		then
+			tr '[:xdigit:]' '0'
+		else
+			tr '[:xdigit:]' '?'
+		fi \
+		| tr -dc '?[:xdigit:]'
+		printf '%s\n' "$sfx"
+	else
+		echo "$line"
+	fi >& 5
+done < "$template_file"
+process_table

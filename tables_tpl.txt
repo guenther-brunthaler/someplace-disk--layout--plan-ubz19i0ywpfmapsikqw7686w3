@@ -1,0 +1,2 @@
+linux_pv_dmcrypt:
+0 $linux_pv_dmcrypt_count linear /dev/disk/by-id/ata-XXXXXX $linux_pv_dmcrypt_start

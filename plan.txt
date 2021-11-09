@@ -1,0 +1,20 @@
+align 4KiB
+=512 grub_stage_1
+=33*512 gpt_header
+6*512 ms_reserved
+2008*512 grub_stage_1_5
+262144*512 grub_stage_2_boot
+23068672*512 linux_swap
+187494616*512 ms_truecrypt
+=5649703542*512 linux_pv_dmcrypt
+=@5860531055*512 gpt_trailer
+stop
+
+Device         Start        End    Sectors  Size Type
+/dev/sda1         34         39          6    3K Microsoft reserved
+/dev/sda2         40       2047       2008 1004K BIOS boot
+/dev/sda3       2048     264191     262144  128M Linux filesystem
+/dev/sda4     264192   23332863   23068672   11G Linux swap
+/dev/sda5   23332864  210827479  187494616 89,4G Microsoft basic data
+/dev/sda6  210827480 5860531021 5649703542  2,6T Linux LVM
+Disk /dev/sda: 2,7 TiB, 3000591900160 bytes, 5860531055 sectors

@@ -1,0 +1,219 @@
+#! /bin/sh
+exit_version() {
+	cat << .; exit
+$0 Version 2018.58
+
+Copyright (c) 2017-2018 Guenther Brunthaler. All rights reserved.
+
+This script is free software.
+Distribution is permitted under the terms of the GPLv3.
+.
+}
+
+exit_help() {
+	cat << .; echo; exit_version # Text width: 66 columns.
+$0 - evaluate a disk allocation layout sector plan
+
+Usage: $0 [ <options> ] < <plan_source_file>
+
+<plan_source_file> is a text file containing one plan instruction
+per line.
+
+Without options, evaluates the plan read from standard input and
+displays the resulting sector (512-byte unit) ranges.
+
+Options:
+-v: Additionally show start, stop and size in units of bytes
+-s: Show Bourne shell code to set variables for every range
+-h: Display this help and exit
+-V: Display version information and exit
+
+Plan instructions:
+
+"align <bytes>":
+
+Change the current alignment value. This value is initially
+undefined. Whether or not alignment correction is used, the
+effective start and stop offsets of every range must be a
+multiple of 512 bytes.
+
+"!<var>":
+
+Save the current byte offset in a variable with name <var>. The
+initial offset is 0.
+
+"?<var>":
+
+Restore the current byte offset from previously saved variable
+with name <var>. Alignment correction will not take place as part
+of this operation.
+
++<bytes>:
+-<bytes>:
+
+Add or subtract <bytes> from the current byte offset. Does not
+try to apply any alignment correction and does not define a
+range.
+
+"<bytes> <range_name>":
+
+Start a new range at the current byte offset (do not try to
+correct its alignment). Then add <bytes> to the current offset
+and apply alignment correction to the result. Then use the new
+current byte offset as the stop position (first byte beyond the
+end) of the range.
+
+Alignment correction requires a previously defined alignment
+value. Correction is necessary only if the current byte position
+is not a multiple of the alignemt value. In this case, 1 is added
+to the current byte position until it becomes a multiple of the
+alignment value.
+
+"@<bytes> <range_name>":
+
+Start a new range at the current byte offset (do not try to
+correct its alignment). Then set <bytes> as the new current
+offset and apply alignment correction to the result. Then use the
+new current byte offset as the stop position (first byte beyond
+the end) of the range.
+
+"=<bytes> <range_name>":
+"=@<bytes> <range_name>":
+
+Same as without the "=", except that the alignment correction of
+the range stop position is skipped.
+
+"stop":
+
+Stop processing the plan file at this point and ignore any
+remaining lines of text.
+
+How to specify <bytes>:
+
+<bytes> is either a byte value, optionally followed immediately
+by a decimal multiplier (kB, MB, GB, TB, PB or EB) or by a binary
+multiplier (KiB, MiB, GiB, TiB, PiB or EiB) or by an explicit
+multiplier in the form "*<integer>, such as "*512". Or, if it has
+the form "?<var>", the contents of a previously set variable with
+name <var> will be used as the value instead.
+.
+}
+
+set -e
+trap 'test $? = 0 || echo "$0 failed!" >& 2' 0
+verbose=false
+shvars=false
+while getopts vshV opt
+do
+	case $opt in
+		v) verbose=true;;
+		s) shvars=true;;
+		h) exit_help;;
+		V) exit_version;;
+		*) false || exit
+	esac
+done
+shift `expr $OPTIND - 1 || :`
+pdu=kB; eval $pdu=1000; pbu=KiB; eval $pbu=1024; ss=512
+for mu in M G T P E
+do
+	eval ${mu}B=\`expr \$$pdu \\\* $kB\`; pdu=${mu}B
+	eval ${mu}iB=\`expr \$$pbu \\\* $KiB\`; pbu=${mu}iB
+done
+bs=none
+start=0
+get() {
+	local name what
+	name=$1; what=${2#"?"}; shift 2
+	while test $# != 0
+	do
+		if test "$1" = "$what"
+		then
+			eval "$name=\$2"
+			return
+		fi
+		shift 2
+	done
+	echo "Undefined label '$what'!" >& 2
+	false || exit
+}
+set --
+while read -r line desc
+do
+	case $line in
+		stop) break;;
+		!*) set -- "$@" "${line#!}" "$start"; continue;;
+		"?"*) get start "$line" "$@"; continue;;
+		align) line=$desc; bs=get
+	esac
+	align=$bs
+	case $line in
+		=*) line=${line#?}; align=1
+	esac
+	case $line in
+		@*)
+			line=${line#?}
+			case $line in
+				"?"*) get line "$line" "$@"
+			esac
+			off=0
+			;;
+		[+-]*) t=$line; line=${t#?}; off=${t%"$line"};;
+		*) off=$start
+	esac
+	case $line in
+		*[kMGTPE]B) t=${line%??}; eval mu=\$${line#"$t"}; line=$t;;
+		*[KMGTPE]iB) t=${line%???}; eval mu=\$${line#"$t"}; line=$t;;
+		*"*"[1-9]*)
+			mu=`expr x"$line" : x'[0-9]*\\*\\([1-9][0-9]*\\)$'`
+			line=${line%"*$mu"}
+			;;
+		*) mu=1
+	esac
+	case $bs in
+		get)
+			bs=`expr $line \* $mu || :`
+			continue
+	esac
+	case $off in
+		[-+])
+			start=`expr $start $off $line \* $mu` || :
+			test $start -ge 0
+			continue
+	esac
+	line=`expr $line \* $mu + $off || :`
+	line=`expr \( $line + $align - 1 \) / $align || :`
+	line=`expr $line \* $align || :`
+	s=`expr $line / $ss || :`
+	ns=`expr $s \* $ss || :`
+	test "$ns" = "$line"
+	sb=`expr $start / $ss || :`
+	sn=`expr \( $ns - $start \) / $ss || :`
+	if $shvars
+	then
+		printf %s%s%s \
+			"$sb $sn ${desc}_start=$sb" \
+			"; ${desc}_stop=`expr $sb + $sn || :`" \
+			"; ${desc}_count=$sn"
+	else
+		printf %s "$sb $sn $desc"
+	fi
+	if $verbose
+	then
+		$shvars && printf ' #'
+		printf %s%s \
+			" (`expr $ns - $start || :` bytes @ $start" \
+			" through `expr $ns - 1 || :`)"
+	fi
+	echo
+	start=$ns
+done | LC_NUMERIC=C sort -n \
+| if $shvars
+then
+	while IFS=' ' read -r line line line
+	do
+		printf '%s\n' "$line"
+	done
+else
+	cat
+fi

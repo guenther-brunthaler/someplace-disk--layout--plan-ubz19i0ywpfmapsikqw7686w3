@@ -37,25 +37,25 @@ undefined. Whether or not alignment correction is used, the
 effective start and stop offsets of every range must be a
 multiple of 512 bytes.
 
-"!<var>":
+"!<label>":
 
-Save the current byte offset in a variable with name <var>. It is
-ok to assign multiple times to the same variable. The initial
-offset is 0. Variables live in a different namespace than ranges,
-so a variable and a range of the same name may exist
-independently.
+Save the current byte offset as a label with name <label>. Once
+defined, a label cannot be redefined and any attempts to do so
+will have no effect. The initial byte offset is 0. Labels live in
+a different namespace than ranges, and so a label and a range of
+the same name may exist independently.
 
-"?<var>":
+"?<label>":
 
-Restore the current byte offset from previously saved variable
-with name <var>. Alignment correction will not take place as part
-of this operation.
+Restore the current byte offset from previously saved label with
+name <label>. Alignment correction will not take place as part of
+this operation.
 
 "<bytes> <range_name>":
 
 Start a new range at the current byte offset (do not try to
 correct its alignment). Then add <bytes> (or the contents of a
-variable) to the current offset and apply alignment correction to
+label) to the current offset and apply alignment correction to
 the result. A zero value is allowed for adding. Then use the new
 current byte offset as the stop position (first byte beyond the
 end) of the range.
@@ -99,8 +99,8 @@ How to specify <bytes>:
 by a decimal multiplier (kB, MB, GB, TB, PB or EB) or by a binary
 multiplier (KiB, MiB, GiB, TiB, PiB or EiB) or by an explicit
 multiplier in the form "*<integer>, such as "*512". Or, if it has
-the form "?<var>", the contents of a previously set variable with
-name <var> will be used as the value instead.
+the form "?<label>", the contents of a previously set label with
+name <label> will be used as the value instead.
 .
 }
 
@@ -119,14 +119,19 @@ do
 	esac
 done
 shift `expr $OPTIND - 1 || :`
+# Assign supported predefined unit multipliers to shell variables.
 pdu=kB; eval $pdu=1000; pbu=KiB; eval $pbu=1024; ss=512
 for mu in M G T P E
 do
 	eval ${mu}B=\`expr \$$pdu \\\* $kB\`; pdu=${mu}B
 	eval ${mu}iB=\`expr \$$pbu \\\* $KiB\`; pbu=${mu}iB
 done
-bs=none
-start=0
+bs=none # Alignment value.
+start=0 # Current offset.
+# Assign the value associated with label named $2 to shell variable with name
+# $2. $3 and onwards are pairs ($label_name, $byte_offset) to be searched. $2
+# may have an optional "?"-prefix which will be stripped. Only the first
+# matching label from list will be used.
 get() {
 	local name what
 	name=$1; what=${2#"?"}; shift 2
@@ -142,19 +147,24 @@ get() {
 	echo "Undefined label '$what'!" >& 2
 	false || exit
 }
-set --
+set -- # Positional arguments hold ($label_name, $byte_offset)-pairs.
 while read -r line desc
 do
+	# Loop invariant: $start is a sector-aligned offset.
 	case $line in
 		stop) break;;
 		!*) set -- "$@" "${line#!}" "$start"; continue;;
 		"?"*) get start "$line" "$@"; continue;;
 		align) line=$desc; bs=get
 	esac
+	# Set alignment value or "get" (if evaluating $line yields alignment).
 	align=$bs
 	case $line in
 		=*) line=${line#?}; align=1
 	esac
+	# Prepare to calculate the end offset $off of a new range with
+	# name $desc from expression $line. (The start offset of
+	# the range will be $start.)
 	case $line in
 		@*)
 			line=${line#?}
@@ -165,6 +175,8 @@ do
 			;;
 		*) off=$start
 	esac
+	# $line is the length of the range, a byte value,
+	# possibly suffixed with a unit multiplier.
 	case $line in
 		*[kMGTPE]B) t=${line%??}; eval mu=\$${line#"$t"}; line=$t;;
 		*[KMGTPE]iB) t=${line%???}; eval mu=\$${line#"$t"}; line=$t;;
@@ -174,19 +186,27 @@ do
 			;;
 		*) mu=1
 	esac
+	# Now $line is an integer and $mu its associated unit multiplier.
 	case $bs in
 		get)
 			bs=`expr $line \* $mu || :`
 			continue
 	esac
+	# Calculate $line as end of range starting at $off with $line bytes.
 	line=`expr $line \* $mu + $off || :`
+	# Round up the end of the range using the current alignment value.
 	line=`expr \( $line + $align - 1 \) / $align || :`
 	line=`expr $line \* $align || :`
+	# Convert the new end offset $line from bytes into sectors.
 	s=`expr $line / $ss || :`
 	ns=`expr $s \* $ss || :`
+	# Ensure the range end offset is sector aligned. (Because
+	# of the loop invariant, we don't also need to check $start.)
 	test "$ns" = "$line"
+	# Set $sb to first sector of range. Set $sn to range length as sectors.
 	sb=`expr $start / $ss || :`
 	sn=`expr \( $ns - $start \) / $ss || :`
+	# Emit results as a new range.
 	if $shvars
 	then
 		printf %s%s%s \
@@ -204,14 +224,15 @@ do
 			" through `expr $ns - 1 || :`)"
 	fi
 	echo
+	# The current range's end offset becomes the next range's start offset.
 	start=$ns
 done | LC_NUMERIC=C sort -n \
 | if $shvars
 then
-	while IFS=' ' read -r line line line
+	while IFS=' ' read -r line line line # Get rid of sort helper fields.
 	do
 		printf '%s\n' "$line"
 	done
 else
-	cat
+	cat # Display only sort helper fields (start sector and sector count).
 fi

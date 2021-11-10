@@ -1,4 +1,9 @@
 #! /bin/sh
+# Version 2019.194.1
+# Copyright (c) 2019 Guenther Brunthaler. All rights reserved.
+#
+# This script is free software.
+# Distribution is permitted under the terms of the GPLv3.
 template_file=tables_tpl.txt
 planner=mkplan
 plan_file=plan.txt
@@ -25,9 +30,13 @@ mount=false
 shkeys=false
 unmount=false
 table_syntax=false
-while getopts ukmt opt
+while getopts ukmtf:p:K:P: opt
 do
 	case $opt in
+		P) planner=$OPTARG;;
+		p) plan_file=$OPTARG;;
+		K) keys_dir=$OPTARG;;
+		f) template_file=$OPTARG;;
 		t) table_syntax=true;;
 		m) mount=true;;
 		k) shkeys=true;;
@@ -36,6 +45,14 @@ do
 	esac
 done
 shift `expr $OPTIND - 1 || :`
+
+test -f "$template_file"
+
+if $mount
+then
+	$shkeys || $table_syntax && { false || exit; }
+	shkeys=true
+fi
 
 TF=`mktemp -- "${TMPDIR:-/tmp}/${0##*/}.XXXXXXXXXX"`
 
@@ -101,6 +118,8 @@ process_table() {
 	fi
 }
 
+# "Protected" subtraction which will not fail when the result is zero. For use
+# in $template_file.
 sbtr() {
 	expr "$1" - "$2" || :
 }
@@ -123,18 +142,18 @@ do
 			continue
 	esac
 	test -n "$table"
-	eval "line=\"$line\""
+	set -f; eval "line=\"$line\""; set +f
 	pfx=${line%"{{"*};
 	if test "$pfx" != "$line"
 	then
 		line=${line#"$pfx"}
 		sfx=${line#*"$cb"}; test "$sfx" != "$line"
 		line=${line%"$sfx"}; line=${line%"$cb"}; line=${line#"{{"}
-		expr "$line" : '[1-9][0-9]*$' > /dev/null
+		expr x"$line" : x'[1-9][0-9]*$' > /dev/null
 		test -f "$kfile"
-		test "`stat -c %s -- "$kfile"`" = "$line"
+		test "`stat -Lc %s -- "$kfile"`" -ge $line
 		printf %s "$pfx"
-		od -A n -vt x1 -- "$kfile" \
+		od -A n -vt x1 -N $line -- "$kfile" \
 		| if $shkeys
 		then
 			cat

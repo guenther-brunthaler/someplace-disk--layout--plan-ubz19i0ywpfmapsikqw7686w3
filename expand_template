@@ -1,0 +1,50 @@
+#! /bin/sh
+# Version 2019.194
+# Copyright (c) 2019 Guenther Brunthaler. All rights reserved.
+#
+# This script is free software.
+# Distribution is permitted under the terms of the GPLv3.
+planner=mkplan
+plan_file=plan.txt
+
+set -e
+cleanup() {
+	rc=$?
+	test -n "$TF" && rm -- "$TF"
+	test $rc = 0 || echo "\"$0\" failed!" >& 2
+}
+TF=
+trap cleanup 0
+trap 'exit $?' TERM HUP INT QUIT
+
+while getopts p:P: opt
+do
+	case $opt in
+		P) planner=$OPTARG;;
+		p) plan_file=$OPTARG;;
+		*) false || exit
+	esac
+done
+shift `expr $OPTIND - 1 || :`
+
+test $# != 0; template_file=$1; shift; test -f "$template_file"
+
+test $# = 0
+
+TF=`mktemp -- "${TMPDIR:-/tmp}/${0##*/}.XXXXXXXXXX"`
+
+test -f "$planner"
+test -f "$plan_file"
+sh "$planner" -s < "$plan_file" > "$TF"
+. "$TF"
+
+# "Protected" subtraction which will not fail when the result is zero. For use
+# in $template_file.
+sbtr() {
+	expr "$1" - "$2" || :
+}
+while IFS= read -r line
+do
+	set -f; eval "line=\"$line\""; set +f
+	printf '%s\n' "$line"
+done < "$template_file"

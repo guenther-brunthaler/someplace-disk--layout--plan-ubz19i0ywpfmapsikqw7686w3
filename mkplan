@@ -1,9 +1,9 @@
 #! /bin/sh
 exit_version() {
 	cat << .; exit
-$0 Version 2018.58
+$0 Version 2021.314
 
-Copyright (c) 2017-2018 Guenther Brunthaler. All rights reserved.
+Copyright (c) 2017-2021 Guenther Brunthaler. All rights reserved.
 
 This script is free software.
 Distribution is permitted under the terms of the GPLv3.
@@ -11,7 +11,7 @@ Distribution is permitted under the terms of the GPLv3.
 }
 
 exit_help() {
-	cat << .; echo; exit_version # Text width: 66 columns.
+	cat << .; echo; exit_version # 66 columns line width.
 $0 - evaluate a disk allocation layout sector plan
 
 Usage: $0 [ <options> ] < <plan_source_file>
@@ -39,35 +39,47 @@ multiple of 512 bytes.
 
 "!<var>":
 
-Save the current byte offset in a variable with name <var>. The
-initial offset is 0.
+Save the current byte offset in a variable with name <var>. It is
+ok to assign multiple times to the same variable. The initial
+offset is 0. Variables live in a different namespace than ranges,
+so a variable and a range of the same name may exist
+independently.
 
 "?<var>":
 
 Restore the current byte offset from previously saved variable
 with name <var>. Alignment correction will not take place as part
 of this operation.
-
+`: '
 +<bytes>:
 -<bytes>:
 
 Add or subtract <bytes> from the current byte offset. Does not
 try to apply any alignment correction and does not define a
 range.
-
+'`
 "<bytes> <range_name>":
 
 Start a new range at the current byte offset (do not try to
-correct its alignment). Then add <bytes> to the current offset
-and apply alignment correction to the result. Then use the new
+correct its alignment). Then add <bytes> (or the contents of a
+variable) to the current offset and apply alignment correction to
+the result. A zero value is allowed for adding. Then use the new
 current byte offset as the stop position (first byte beyond the
 end) of the range.
 
 Alignment correction requires a previously defined alignment
 value. Correction is necessary only if the current byte position
-is not a multiple of the alignemt value. In this case, 1 is added
-to the current byte position until it becomes a multiple of the
-alignment value.
+is not a multiple of the alignment value. In this case, 1 is
+added to the current byte position until it becomes a multiple of
+the alignment value.
+
+There is deliberately no way to subtract from the current
+position as this would become too complicated. Use the -s option
+instead to create a snippet for setting shell variables and then
+use "expr" or arithmetic shell expansion to perform any required
+subtractions. Make sure to verify at run-time that the arithmetic
+actually used can keep up with the largest of the resulting
+sector numbers.
 
 "@<bytes> <range_name>":
 
@@ -158,7 +170,7 @@ do
 			esac
 			off=0
 			;;
-		[+-]*) t=$line; line=${t#?}; off=${t%"$line"};;
+		#[+-]*) t=$line; line=${t#?}; off=${t%"$line"};;
 		*) off=$start
 	esac
 	case $line in
@@ -175,12 +187,12 @@ do
 			bs=`expr $line \* $mu || :`
 			continue
 	esac
-	case $off in
-		[-+])
-			start=`expr $start $off $line \* $mu` || :
-			test $start -ge 0
-			continue
-	esac
+	#case $off in
+	#	[-+])
+	#		start=`expr $start $off $line \* $mu` || :
+	#		test $start -ge 0
+	#		continue
+	#esac
 	line=`expr $line \* $mu + $off || :`
 	line=`expr \( $line + $align - 1 \) / $align || :`
 	line=`expr $line \* $align || :`

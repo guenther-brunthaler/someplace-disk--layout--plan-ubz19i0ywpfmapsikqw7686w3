@@ -1,7 +1,7 @@
 #! /bin/sh
 exit_version() {
 	cat << .; exit
-$0 Version 2021.314.1
+$0 Version 2021.314.2
 
 Copyright (c) 2017-2021 Guenther Brunthaler. All rights reserved.
 
@@ -50,6 +50,13 @@ the same name may exist independently.
 Restore the current byte offset from previously saved label with
 name <label>. Alignment correction will not take place as part of
 this operation.
+
++<bytes>:
+-<bytes>:
+
+Add or subtract <bytes> from the current byte offset. Does not
+try to apply any alignment correction and does not define a
+range.
 
 "<bytes> <range_name>":
 
@@ -173,6 +180,7 @@ do
 			esac
 			off=0
 			;;
+		[+-]*) t=$line; line=${t#?}; off=${t%"$line"};;
 		*) off=$start
 	esac
 	# $line is the length of the range, a byte value,
@@ -190,6 +198,15 @@ do
 	case $bs in
 		get)
 			bs=`expr $line \* $mu || :`
+			continue
+	esac
+	case $off in
+		[-+])
+			start=`expr $start $off $line \* $mu` || :
+			# Ensure the result is sector-aligned.
+			expr $start '>=' 0 \
+				\& $start / $ss \* $ss = $start \
+				> /dev/null
 			continue
 	esac
 	# Calculate $line as end of range starting at $off with $line bytes.

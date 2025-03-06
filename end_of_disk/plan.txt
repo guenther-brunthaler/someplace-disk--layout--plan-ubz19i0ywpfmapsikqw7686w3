@@ -9,6 +9,8 @@ stop
 [Format of the remaining lines: 66 columns maximum and a space at 
 the end of paragraph lines which are continued in the next line.]
 
+Revision of this text: v2025.65
+
 The size of <userdata> is not really zero but unkown. It fills 
 the remaining space of the USB stick. The remaining entries 
 therefore refer to data at the end of the USB stick.
@@ -31,3 +33,14 @@ mkplan
 plan.txt
 ../layout_plan.tgz
 ../THIS_notice.txt
+
+Note that the *.cks file also contains the byte size of the 
+embedded ISO image. It should match die size reported by the 
+"isosize" tool when invoked with the block device of the whole 
+medium as its only argument. Use the "cksum" utility to create 
+the contents of the *.cks file.
+
+The *.sha256 file should have been created with the "sha256sum 
+-b" command. It is a stronger checksum than those created by 
+"cksum", but it lacks the byte size of the checksummed data which 
+only "cksum" provides in its output.

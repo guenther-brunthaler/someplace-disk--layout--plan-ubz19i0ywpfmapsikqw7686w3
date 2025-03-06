@@ -1,6 +1,6 @@
 End of Disk Usage
 =================
-v2025.65
+v2025.65.1
 
 The files in this sub-directory can be used as templates to 
 create hidden user-date volumes in the unused space at the end of 
@@ -35,10 +35,10 @@ partition table.
 "mknotice" is a script which invokes the "mkplan" script 
 internally for processing the contents of file "plan.txt" and 
 then further processes the output of that script. The final 
-result will be a 2 KiB long text which is written to standard 
+result will be a 4 KiB long text which is written to standard 
 output.
 
-This text must be placed in the last 2 KiB of the medium, and 
+This text must be placed in the last 4 KiB of the medium, and 
 contains itself the instructions how to do that. The same text 
 can be read back from there later as the file "THIS_notice.txt". 
 Instructions how to do that are also contained in the text 

@@ -1,0 +1,33 @@
+align 4KiB
+3579840*512 iso_image
+0 userdata
+64KiB this_tgz
+2KiB end_of_disk_notice
+=@3948544*512 end_of_usb_stick
+stop
+
+[Format of the remaining lines: 66 columns maximum and a space at 
+the end of paragraph lines which are continued in the next line.]
+
+The size of <userdata> is not really zero but unkown. It fills 
+the remaining space of the USB stick. The remaining entries 
+therefore refer to data at the end of the USB stick.
+
+In order to update this plan to a different LiveDVD Image, just 
+change its exact byte size in the "iso_image" line.
+
+In order to update this plan to a different USB stick, just 
+changes its exact 512-byte sector size in the "end_of_usb_stick" 
+line.
+
+THIS directory "layout_plan" should contain (if possible) the 
+following files ("some_image_file.iso" just being an example):
+
+some_image_file.iso.cks
+some_image_file.iso.sha256
+some_image_file.iso.url
+mknotice
+mkplan
+plan.txt
+../layout_plan.tgz
+../THIS_notice.txt

@@ -1,0 +1,45 @@
+End of Disk Usage
+=================
+
+The files in this sub-directory can be used as templates to 
+create hidden user-date volumes in the unused space at the end of 
+many live-system images which have been written to a larger USB 
+thumb drive.
+
+In such cases, it is often not possible to create new partitions 
+for the unused space, because the live system expects a certain 
+partition layout which must not be altered.
+
+In other cases, the whole medium is used as kind of a "super 
+floppy" which no partition table at all.
+
+Nevertheless, in those cases it is still possible to maintain a 
+user data volume at the end of the medium, using the files in 
+this directory.
+
+"plan.txt" is an example of a disk layout plan for a USB thumb 
+drive where the most part of the medium is filled with a CD-ROM 
+image. But after that image, a hidden user-data volume is 
+present, and a notice how to mount the hidden volume is present 
+at the last sectors of the medium where it can easily be found 
+with "dd".
+
+To be more specific, ISO image is followed by the user-data 
+volume, which is followed by 64 KiB where the end-of-disk layout 
+plan and scripts are stored as a *.tar.gz archive, and the last 2 
+KiB of space are filled with the aforementioned notice which 
+explains how to access the information which is not part of any 
+partition table.
+
+"mknotice" is a script which reads a layout description from 
+standard input and creates a 2 KiB long text file from this which 
+shall be written as the last 2 KiB of the medium. It represents 
+the instructions how to access the hidden volume and other 
+metadata at the end of the medium. The layout description is the 
+output of processing "plan.txt" with the ../mkplan script.
+
+Also be sure to read the comments at the end of "plan.txt". It 
+describes which scripts and files go where. The resulting 
+information is supposed to be self-contained, which means it can 
+be adapted to other thumb drives without access to THIS 
+repository.

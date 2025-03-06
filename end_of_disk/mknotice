@@ -1,0 +1,138 @@
+#! /bin/sh
+
+# v2025.65
+#
+# Copyright (c) 2023 Guenther Brunthaler. All rights reserved.
+#
+# This script is free software.
+# Distribution is permitted under the terms of the GPLv3.
+
+set -e
+cleanup() {
+	rc=$?
+	test "$TF" && rm -- "$TF"
+	test $rc = 0 || echo "$0 failed!" >& 2
+}
+TF=
+trap cleanup 0
+trap 'exit $?' INT QUIT TERM HUP
+
+while getopts '' opt
+do
+	case $opt in
+		*) false || exit
+	esac
+done
+shift `expr $OPTIND - 1 || :`
+
+# Ensure "expr" can do 64-bit integer math.
+test `expr 9223372036854775806 + 1` = 9223372036854775807
+
+test -d "${TMPDIR:=/tmp}"
+b=$TMPDIR/${0##*/}.$$
+n=1 f=$b
+while :
+do
+	test ! -e "$f" && (umask 077 && > "$f") && break
+	n=`expr $n + 1`
+	f=${b}_$n
+done
+TF=$f
+unset b n f
+
+./mkplan -s < plan.txt > "$TF"
+. "$TF"
+
+align=2048 # CD-ROM sector size.
+# Convert all ranges into units of $align.
+for range in iso_image userdata this_tgz end_of_disk_notice end_of_usb_stick
+do
+	for v in start stop count
+	do
+		vn=${range}_$v
+		eval v=\$$vn; unset $vn
+		vo=$v
+		v=`expr $v \* 512 / $align || :`
+		test "`expr $v \* $align / 512 || :`" = "$vo"
+		eval ${vn}_$align=\$v
+	done
+done
+
+# Make end-relative ranges absolute.
+eval end=\$end_of_usb_stick_stop_$align
+for range in end_of_disk_notice this_tgz userdata
+do
+		eval v=\$${range}_count_$align
+		eval ${range}_stop_$align=\$end
+		end=`expr $end - $v`
+		eval ${range}_start_$align=\$end
+done
+eval userdata_start_$align=\$iso_image_stop_$align
+eval userdata_count_$align=`
+	eval expr \\\$userdata_stop_\$align - \\\$userdata_start_\$align
+`
+for range in userdata end_of_disk_notice
+do
+	for vn in start stop count
+	do
+		vn=${range}_$vn
+		eval v=\$${vn}_$align
+		v=`expr $v \* $align || :`
+		eval ${vn}_1=\$v
+		v=`expr $v / 512 || :`
+		eval ${vn}_512=\$v
+	done
+done
+
+cat << EOF > "$TF"
+How to map unused space after the *.iso image as a block device
+for saving userdata created by you using the live system. For
+instance, you might create an encrypted device there with
+"cryptsetup luksFormat". Or format it directly as a filesystem.
+
+# Set the path to the USB stick device first:
+device=/dev/disk/by-id/your-usb-stick
+
+# Mapping userdata as /dev/mapper/\$mapping:
+mapping=my_usb_stick
+echo 0 $userdata_count_512 linear \${device?:} $userdata_start_512 | dmsetup create \${mapping?:}
+
+# Unmapping \$mapping:
+dmsetup remove \${mapping?:}
+
+# Loop-mounting userdata as \$loop:
+loop=\`losetup -f\`
+losetup \${loop?:} -o $userdata_start_1 --sizelimit $userdata_count_1 "\${device?:}"
+
+# Un-loop-mounting \$loop:
+losetup -d \${loop?:}
+
+# For writing to the USB stick:
+dd of="\${device?:}" if=live.iso count=$iso_image_count_2048 bs=2048
+dd of="\${device?:}" if=userdata.img seek=$userdata_start_2048 count=$userdata_count_2048 bs=2048
+dd of="\${device?:}" if=layout_plan.tgz seek=$this_tgz_start_2048 count=$this_tgz_count_2048 bs=2048
+dd of="\${device?:}" if=THIS_notice.txt seek=$end_of_disk_notice_start_2048 count=$end_of_disk_notice_count_2048 bs=2048
+
+# For reading from the USB stick:
+dd if="\${device?:}" of=live.iso count=$iso_image_count_2048 bs=2048
+dd if="\${device?:}" of=userdata.img skip=$userdata_start_2048 count=$userdata_count_2048 bs=2048
+dd if="\${device?:}" of=layout_plan.tgz skip=$this_tgz_start_2048 count=$this_tgz_count_2048 bs=2048
+dd if="\${device?:}" of=THIS_notice.txt skip=$end_of_disk_notice_start_2048 count=$end_of_disk_notice_count_2048 bs=2048
+EOF
+
+c=`wc -c < "$TF"`
+# The "- 1" compensates for the "\n" character to be appended later.
+c=`expr $end_of_disk_notice_count_1 - $c - 1`
+expr 0 \< $c > /dev/null
+odd=`expr $c % 2 || :`
+c=`expr $c / 2`
+os=`printf ' \b:'`; os=${os%:}
+o=
+while :
+do
+	o=$o$os
+	c=`expr $c - 1` || break
+done
+test $odd = 1 && o=$o' '
+printf '%s\n' "$o"
+cat < "$TF"
